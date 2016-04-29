@@ -11,7 +11,7 @@
 	</parent>
 
 	<artifactId>jaxb-expression-plugin</artifactId>
-	<version>1.0.0-SNAPSHOT</version>
+	<version>1.1.0-SNAPSHOT</version>
 
 	<name>JAXB expression evaluator plugin</name>
 	<description>
@@ -22,9 +22,9 @@
 	<url>https://github.com/mklemm/jaxb-expression-plugin</url>
 
 	<scm>
-		<connection>scm:git:https://github.com/mklemm/jaxb-expression-plugin.git</connection>
-		<developerConnection>scm:git:https://github.com/mklemm/jaxb-expression-plugin.git</developerConnection>
-		<url>https://github.com/mklemm/jaxb-expression-plugin.git</url>
+		<connection>scm:git:https://github.com/mklemm/jaxb-format-plugin.git</connection>
+		<developerConnection>scm:git:https://github.com/mklemm/jaxb-format-plugin.git</developerConnection>
+		<url>https://github.com/mklemm/jaxb-format-plugin.git</url>
 		<tag>jaxb-format-plugin-1.0.1</tag>
 	</scm>
 
