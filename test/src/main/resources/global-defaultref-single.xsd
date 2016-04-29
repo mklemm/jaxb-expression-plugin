@@ -31,19 +31,18 @@
 			<annotation>
 				<appinfo>
 					<ep:expressions>
-						<ep:expression name="logon-state"
+						<!-- ep:expression name="logon-state"
 									   select="autoLogon ? &quot;Logon Enabled&quot; : &quot;Logon Off&quot;"
-									   type="string"/>
-						<ep:expression select="userId.hashCode()" method-name="hashCode" type="int"/>
+									   type="string"/ -->
 						<ep:expression select="concat(user-id, ' - ', user-last-name, ', ', user-first-name)">
 							<ep:evaluator-ref name="Evaluator"/>
 						</ep:expression>
-						<ep:expression name="int-value" select="confirmPrivilege + 1200" type="int">
+						<!-- ep:expression name="int-value" select="confirmPrivilege + 1200" type="int">
 							<ep:evaluator-ref name="LiteralEvaluator" method="check"/>
 						</ep:expression>
 						<ep:expression name="loop-value" select="ebm 2008" type="tns:global-defaultref-single">
 							<ep:evaluator-ref name="LiteralEvaluator" method="loop"/>
-						</ep:expression>
+						</ep:expression -->
 					</ep:expressions>
 				</appinfo>
 			</annotation>
