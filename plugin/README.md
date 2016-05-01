@@ -200,69 +200,70 @@ the JAXB namespace, and the jxb:version and jxb:extensionBindingPrefixes attribu
 
 There can be multiple evaluators, in which case an expression element can reference an appropriate evaluator in the following way:
 
-		<schema xmlns="http://www.w3.org/2001/XMLSchema" version="1.0"
-			targetNamespace="http://my.namespace.org/myschema"
-			xmlns:jxb="http://java.sun.com/xml/ns/jaxb"
-			jxb:version="2.1"
-			jxb:extensionBindingPrefixes="expression"
-			xmlns:expression="http://www.codesup.net/jaxb/plugins/expression">
+	<schema xmlns="http://www.w3.org/2001/XMLSchema" version="1.0"
+		targetNamespace="http://my.namespace.org/myschema"
+		xmlns:jxb="http://java.sun.com/xml/ns/jaxb"
+		jxb:version="2.1"
+		jxb:extensionBindingPrefixes="expression"
+		xmlns:expression="http://www.codesup.net/jaxb/plugins/expression">
 
-            <annotation>
-                <appInfo>
-                    <!-- declare evaluator class ->
-                    <expression:evaluator name="toStringEval" class="com.kscs.util.jaxb.Evaluator">
-                        <expression:method name="evaluate"/>
-                    </expression:evaluator>
-                    <expression:evaluator name="my-second-eval" static="true" class="com.acme.EvaluatorUtility">
-                        <expression:method name="convert" type-passing="xml-schema" literal="true"/>
-                    </expression:evaluator>
-                </appInfo>
-            </annotation>
-			<!-- ... other definitions -->
-
-			<complexType name="my-type">
-				<annotation>
-					<appInfo>
-						<expression:expression method-name="toString" select="concat('My Object is ', @name, ', created at: ', format:isoDate(created-at))">
-						    <expression:evaluator name="toStringEval"/>
-						</expression:expression>
-					</appInfo>
-				</annotation>
-				<sequence>
-					<element name="created-at" type="datetime"/>
-				</sequence>
-				<attribute name="name" type="string"/>
-			</complexType>
-		</schema>
+		<annotation>
+			<appInfo>
+			    <expression:evaluators>
+			            <expression:evaluator name="toStringEval" class="com.kscs.util.jaxb.Evaluator">
+			                <expression:method name="evaluate"/>
+			            </expression:evaluator>
+			            <expression:evaluator name="my-second-eval" static="true" class="com.acme.EvaluatorUtility">
+			                <expression:method name="convert" type-passing="xml-schema" literal="true"/>
+			            </expression:evaluator>
+			    </expression:evaluators>
+			</appInfo>
+		</annotation>
+		<!-- ... other definitions -->
+	
+		<complexType name="my-type">
+			<annotation>
+				<appInfo>
+					<expression:expression method-name="toString" select="concat('My Object is ', @name, ', created at: ', format:isoDate(created-at))">
+					    <expression:evaluator name="toStringEval"/>
+					</expression:expression>
+				</appInfo>
+			</annotation>
+			<sequence>
+				<element name="created-at" type="datetime"/>
+			</sequence>
+			<attribute name="name" type="string"/>
+		</complexType>
+	</schema>
 
 There can be evaluator configurations local to a specific complexType, in which case <expression> elements can be specified as direct children of the evaluator
 configuration:
 
-		<schema xmlns="http://www.w3.org/2001/XMLSchema" version="1.0"
-			targetNamespace="http://my.namespace.org/myschema"
-			xmlns:jxb="http://java.sun.com/xml/ns/jaxb"
-			jxb:version="2.1"
-			jxb:extensionBindingPrefixes="expression"
-			xmlns:expression="http://www.codesup.net/jaxb/plugins/expression">
+	<schema xmlns="http://www.w3.org/2001/XMLSchema" version="1.0"
+		targetNamespace="http://my.namespace.org/myschema"
+		xmlns:jxb="http://java.sun.com/xml/ns/jaxb"
+		jxb:version="2.1"
+		jxb:extensionBindingPrefixes="expression"
+		xmlns:expression="http://www.codesup.net/jaxb/plugins/expression">
 
-			<!-- ... other definitions -->
+		<!-- ... other definitions -->
 
-			<complexType name="my-type">
-				<annotation>
-					<appInfo>
-                        <expression:evaluator name="toStringEval" class="com.kscs.util.jaxb.Evaluator">
-                            <expression:method name="evaluate"/>
-                            <expression:expression method-name="toString" select="concat('My Object is ', @name, ', created at: ', format:isoDate(created-at))"/>
-                            <expression:expression method-name="hashCode" select="generate-id(name)"/>
-                        </expression:evaluator>
-					</appInfo>
-				</annotation>
-				<sequence>
-					<element name="created-at" type="datetime"/>
-				</sequence>
-				<attribute name="name" type="string"/>
-			</complexType>
-		</schema>
+		<complexType name="my-type">
+			<annotation>
+				<appInfo>
+			                <expression:evaluator name="toStringEval" class="com.kscs.util.jaxb.Evaluator">
+			                    <expression:method name="evaluate"/>
+			                    <expression:expression method-name="toString" select="concat('My Object is ', @name, ', created at: ', format:isoDate(created-at))"/>
+			                    <expression:expression method-name="hashCode" select="generate-id(name)"/>
+			                </expression:evaluator>
+				</appInfo>
+			</annotation>
+			<sequence>
+				<element name="created-at" type="datetime"/>
+			</sequence>
+			<attribute name="name" type="string"/>
+		</complexType>
+	</schema>
 
 If multiple expression elements are given on a complexType, they must be wrapped inside and <expressions> element, since JAXB
 XJC doesn't allow multiple customization elements of the same type on one target element.
