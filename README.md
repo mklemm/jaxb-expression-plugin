@@ -4,5 +4,5 @@ JAXB XJC plugin to create methods that evaluate arbitrary expressions on a gener
 This repository contains both the actual plugin implementation and a separate test suite.
 The POM in the root of the repository is a reactor project that contains both of the others.
 
-For further information about the plugin, have a look at the plugin [README](https://github.com/mklemm/jaxb-expression-plugin/plugin/README.md)
+For further information about the plugin, have a look at the plugin [README](https://github.com/mklemm/jaxb-expression-plugin/blob/master/plugin/README.md)
 
