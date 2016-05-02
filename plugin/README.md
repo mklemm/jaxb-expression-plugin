@@ -1,5 +1,5 @@
 # jaxb-expression-plugin
-Plugin for the JAXB (Java API for XML Binding) Schema-to-Source compiler (XJC) that generates
+Plugin for the JAXB (Java API for XML Binding) XML-Schema-to-Java compiler (XJC) that generates
 methods that evaluate a specific expression on an instance of a generated class.
 The expressions can be of any format, provided there is an evaluator class that fulfils the
 properties below, and provided the expression can be written in string form in
@@ -12,9 +12,9 @@ are based on a generic approach that includes all properties of the generated cl
 On the other hand, there is the "code injection" plugin that just copies arbitrary java code to
 the generated class' body.
 The expression plugin tries to fill the gap between these two extremes. XSD and binding config files
-should be kept free of programming-language-specific content, and entering literal java code there
+should be kept free of programming-language specific content, and entering literal java code there
 is not acceptable if you want to share your XSDs as part of an interface description of e.g. a REST
-service. But sometimes yopu need more flexibility in generating certain additional methods than just
+service. But sometimes you need more flexibility in generating certain additional methods than just
 the generic toString(), hashCode(), and equals() logic.
 The expression plugin lets you implement simple additional methods for a generated class while
 keeping most of your XSDs and binding files language-independent. It only allows to generate
@@ -30,7 +30,7 @@ to add useful logic for itself.
 - Add an evaluator class (see below) to the compile and runtime classpath of your application.
 - Add jaxb-expression-plugin.jar to the classpath of the XJC. See below on examples about how to do that with Maven.
 - Enable extension processing in XJC by specifying the "-extension" command line option. See below for Maven example.
-- Enable jaxb-expressiont-plugin with "-Xexpression" on the XJC command line.
+- Enable jaxb-expression-plugin with "-Xexpression" on the XJC command line.
 - Specify the fully qualified name of the evaluator class in the XSD or binding-config file with the <evaluator>
   binding customization on the global or complexType level.
 - Add "expression" binding customizations to complexType definitions in your XSD or separate binding customization file.
@@ -38,7 +38,9 @@ to add useful logic for itself.
 
 ## Reference
 ### Plugin artifact
+
 groupId: net.codesup.util
+
 artifactId: jaxb-expression-plugin
 
 ### Plugin Activation
@@ -53,6 +55,7 @@ not need to implement a specific interface. It must, however, be in the classpat
 the generated code is compiled by the java compiler.
 
 There are two different patterns you can implement an evaluator class as:
+
 1. Instance evaluator
 2. Static (utility class) evaluator
 
@@ -74,7 +77,7 @@ The evaluator class must have the following properties:
 The evaluator class must have the following properties:
 
 1. It is never instantiated, so no accessible constructors are needed.
-2. Public instance methods that take as a first argument the instance of
+2. Public static methods that take as a first argument the instance of
     the target class, as second arg an expression as a string and optionally
     the requested return type as parameters.
 	The return type of this method must be compatible with the return
@@ -101,6 +104,7 @@ are processing the serialized XML document or the object graph in memory.
 Additionally, jxpath-object-formatter defines custom XPath functions to format java.util.Date values etc.
 
 #### Maven setup
+
 1. Add runtime dependency to jxpath-object-formatter:
 
 		<dependencies>
@@ -163,40 +167,42 @@ Additionally, jxpath-object-formatter defines custom XPath functions to format j
 		</build>
 
 #### Use it in XSD
-Ths is an example how to specify the binding customizations inline in the XSD file,
+
+This is an example how to specify the binding customizations inline in the XSD file,
 please refer to the JAXB/XJC documentation on how to do that in a separate binding
 file.
+
 In any case, you must declare a namespace prefix for the "http://www.codesup.net/jaxb/plugins/expression"
 namespace, and then use (at least) one "evaluator" and one "expression" customization. Also note the declaration of
 the JAXB namespace, and the jxb:version and jxb:extensionBindingPrefixes attributes.
 
-		<schema xmlns="http://www.w3.org/2001/XMLSchema" version="1.0"
+	<schema xmlns="http://www.w3.org/2001/XMLSchema" version="1.0"
 			targetNamespace="http://my.namespace.org/myschema"
 			xmlns:jxb="http://java.sun.com/xml/ns/jaxb"
 			jxb:version="2.1"
 			jxb:extensionBindingPrefixes="expression"
 			xmlns:expression="http://www.codesup.net/jaxb/plugins/expression">
 
-            <annotation>
-                <appInfo>
-                    <!-- declare evaluator class ->
-                    <expression:evaluator class="com.kscs.util.jaxb.Evaluator"/>
-                </appInfo>
-            </annotation>
+		<annotation>
+			<appInfo>
+			    <!-- declare evaluator class ->
+			    <expression:evaluator class="com.kscs.util.jaxb.Evaluator"/>
+			</appInfo>
+		</annotation>
 			<!-- ... other definitions -->
 
-			<complexType name="my-type">
-				<annotation>
-					<appInfo>
-						<expression:expression method-name="toString" select="concat('My Object is ', @name, ', created at: ', format:isoDate(created-at))"/>
-					</appInfo>
-				</annotation>
-				<sequence>
-					<element name="created-at" type="datetime"/>
-				</sequence>
-				<attribute name="name" type="string"/>
-			</complexType>
-		</schema>
+		<complexType name="my-type">
+			<annotation>
+				<appInfo>
+					<expression:expression method-name="toString" select="concat('My Object is ', @name, ', created at: ', format:isoDate(created-at))"/>
+				</appInfo>
+			</annotation>
+			<sequence>
+				<element name="created-at" type="datetime"/>
+			</sequence>
+			<attribute name="name" type="string"/>
+		</complexType>
+	</schema>
 
 There can be multiple evaluators, in which case an expression element can reference an appropriate evaluator in the following way:
 
