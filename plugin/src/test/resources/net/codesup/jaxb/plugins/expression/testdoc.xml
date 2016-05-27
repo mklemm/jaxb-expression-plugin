@@ -1,0 +1,13 @@
+<html:html xmlns:html="http://www.w3.org/1999/xhtml"
+		   xmlns:xsl="http://www.w3.org/1999/XSL/Transform" xmlns:ns2="urn:name:not" xmlns:ns3="http://min.org/schema" xmlns:xmf="http://www.metafont.org/schema"
+xmlns:lengthy-prefix="http://cxf.apache.org/bindings/soap">
+	<html:head>
+		<html:link rel="stylesheet"/>
+		<html:title>Title 1</html:title>
+	</html:head>
+	<html:body>
+		<html:p>
+			TestText
+		</html:p>
+	</html:body>
+</html:html>

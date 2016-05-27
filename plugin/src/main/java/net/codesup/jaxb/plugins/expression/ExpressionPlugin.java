@@ -21,30 +21,42 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
-
 package net.codesup.jaxb.plugins.expression;
 
+import java.io.StringWriter;
+import java.text.MessageFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.ResourceBundle;
+import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
+import javax.xml.bind.Binder;
 import javax.xml.bind.JAXBContext;
 import javax.xml.bind.JAXBException;
-import javax.xml.bind.Unmarshaller;
 import javax.xml.namespace.QName;
+import javax.xml.transform.Transformer;
+import javax.xml.transform.TransformerException;
+import javax.xml.transform.TransformerFactory;
+import javax.xml.transform.dom.DOMSource;
+import javax.xml.transform.stream.StreamResult;
 
+import org.w3c.dom.Element;
+import org.w3c.dom.Node;
 import org.xml.sax.ErrorHandler;
 import org.xml.sax.SAXException;
 import org.xml.sax.SAXParseException;
 
 import com.kscs.util.plugins.xjc.base.AbstractPlugin;
+import com.sun.codemodel.JArray;
 import com.sun.codemodel.JClass;
 import com.sun.codemodel.JCodeModel;
-import com.sun.codemodel.JConditional;
 import com.sun.codemodel.JDefinedClass;
 import com.sun.codemodel.JExpr;
 import com.sun.codemodel.JExpression;
@@ -69,19 +81,10 @@ import com.sun.xml.bind.v2.model.core.MaybeElement;
  * of a delegate object formatter class. Delegate class, method names, method return
  * types and modifiers can be customized on the XJC command line or as binding
  * customizations.
+ *
  * @author Mirko Klemm 2015-01-22
  */
 public class ExpressionPlugin extends AbstractPlugin {
-	private static final JAXBContext JAXB_CONTEXT;
-
-	static {
-		try {
-			JAXB_CONTEXT = JAXBContext.newInstance(Expression.class, Expressions.class, Evaluator.class, Evaluators.class);
-		} catch (final JAXBException e) {
-			throw new RuntimeException(e);
-		}
-	}
-
 	public static final ResourceBundle RESOURCE_BUNDLE = ResourceBundle.getBundle(ExpressionPlugin.class.getName());
 	public static final String OPTION_NAME = "-Xexpression";
 	public static final String CUSTOMIZATION_NS = "http://www.codesup.net/jaxb/plugins/expression";
@@ -91,6 +94,7 @@ public class ExpressionPlugin extends AbstractPlugin {
 	public static final String EVALUATOR_REF_CUSTOMIZATION_NAME = "evaluator-ref";
 	public static final String EVALUATORS_CUSTOMIZATION_NAME = "evaluators";
 	public static final String METHOD_CUSTOMIZATION_NAME = "method";
+	public static final String CONTEXT_CUSTOMIZATION_NAME = "context";
 	public static final String DEFAULT_GENERATED_METHOD_MODIFIERS = "public";
 	public static final List<String> CUSTOM_ELEMENTS = Arrays.asList(
 			ExpressionPlugin.EXPRESSION_CUSTOMIZATION_NAME,
@@ -98,9 +102,34 @@ public class ExpressionPlugin extends AbstractPlugin {
 			ExpressionPlugin.EVALUATOR_CUSTOMIZATION_NAME,
 			ExpressionPlugin.EVALUATOR_REF_CUSTOMIZATION_NAME,
 			ExpressionPlugin.EVALUATORS_CUSTOMIZATION_NAME,
+			ExpressionPlugin.CONTEXT_CUSTOMIZATION_NAME,
 			ExpressionPlugin.METHOD_CUSTOMIZATION_NAME);
 	public static final String DEFAULT_EVALUATOR_METHOD_NAME = "evaluate";
-	public static final String DEFAULT_EVALUATOR_FIELD_NAME = "__evaluator%s";
+	public static final Method DEFAULT_METHOD_DEF;
+	public static final String DEFAULT_EVALUATOR_FIELD_NAME = "__evaluator_%s";
+	public static final String DEFAULT_CONTEXT_FIELD_NAME = "__CONTEXT_%s";
+	public static final String DEFAULT_NAMESPACE_MAP_FIELD_NAME = "__NS_MAP_%s";
+	private static final TransformerFactory TRANSFORMER_FACTORY = TransformerFactory.newInstance();
+	private static final Pattern NS_PREFIX_PATTERN = Pattern.compile("([-\\w]+):\\w");
+	private static final JAXBContext JAXB_CONTEXT;
+	public static final String DEFAULT_GENERATED_METHOD_NAME = "toString";
+
+	static {
+		DEFAULT_METHOD_DEF = new Method();
+		ExpressionPlugin.DEFAULT_METHOD_DEF.setNamespaceAware(false);
+		ExpressionPlugin.DEFAULT_METHOD_DEF.setName(ExpressionPlugin.DEFAULT_EVALUATOR_METHOD_NAME);
+		ExpressionPlugin.DEFAULT_METHOD_DEF.setLiteral(false);
+		ExpressionPlugin.DEFAULT_METHOD_DEF.setTypePassing(Language.NONE);
+		try {
+			JAXB_CONTEXT = JAXBContext.newInstance(Expression.class, Expressions.class, Evaluator.class, Evaluators.class);
+		} catch (final JAXBException e) {
+			throw new RuntimeException(e);
+		}
+	}
+
+	private static SAXParseException getException(final ClassOutline classOutline, final String string, final Object... args) {
+		return new SAXParseException(MessageFormat.format(ExpressionPlugin.RESOURCE_BUNDLE.getString(string), args), classOutline.target.getLocator());
+	}
 
 	@Override
 	public String getOptionName() {
@@ -125,208 +154,253 @@ public class ExpressionPlugin extends AbstractPlugin {
 	@Override
 	public boolean run(final Outline outline, final Options opt, final ErrorHandler errorHandler) throws SAXException {
 		try {
-			final Map<String, Evaluator> evaluatorMap = getEvaluators(outline.getModel());
+			final Map<String, EvaluatorCustomization> evaluatorMap = getEvaluators(outline.getModel());
 			for (final ClassOutline classOutline : outline.getClasses()) {
-				final List<Expression> expressions = getExpressions(classOutline.target);
+				final List<ExpressionCustomization> expressions = getExpressions(classOutline.target);
 				if (!expressions.isEmpty()) {
-					generateMethod(errorHandler, classOutline, evaluatorMap, expressions);
+					generateMethods(errorHandler, classOutline, evaluatorMap, expressions);
 				}
 			}
 			return false;
-		} catch(final JAXBException e) {
+		} catch (final JAXBException e) {
 			throw new SAXException(e);
 		}
 	}
 
-	private Map<String, Evaluator> getEvaluators(final CCustomizable customizable) throws JAXBException {
-		final Map<String,Evaluator> evaluatorMap = new LinkedHashMap<>();
-		final Unmarshaller unmarshaller = ExpressionPlugin.JAXB_CONTEXT.createUnmarshaller();
+	private Map<String, EvaluatorCustomization> getEvaluators(final CCustomizable customizable) throws JAXBException {
+		final Map<String, EvaluatorCustomization> evaluatorMap = new LinkedHashMap<>();
+		final Binder<Node> binder = ExpressionPlugin.JAXB_CONTEXT.createBinder();
 		final CPluginCustomization evaluatorsCustomization = getCustomizationElement(customizable, ExpressionPlugin.EVALUATORS_CUSTOMIZATION_NAME);
 		if (evaluatorsCustomization != null) {
 			evaluatorsCustomization.markAsAcknowledged();
-			final Evaluators evaluators = unmarshaller.unmarshal(evaluatorsCustomization.element, Evaluators.class).getValue();
-			for(final Evaluator evaluator:evaluators.getEvaluator()) {
-				if(evaluator.getName() == null) {
+			final Evaluators evaluators = binder.unmarshal(evaluatorsCustomization.element, Evaluators.class).getValue();
+			for (final Evaluator evaluator : evaluators.getEvaluator()) {
+				if (evaluator.getName() == null) {
 					evaluator.setName(getEvaluatorName(evaluator));
 				}
 				fillEvaluatorReferences(evaluator);
-				evaluatorMap.put(getEvaluatorName(evaluator), evaluator);
+				evaluatorMap.put(getEvaluatorName(evaluator), new EvaluatorCustomization(evaluator, binder));
 			}
 		}
 		final CPluginCustomization evaluatorCustomization = getCustomizationElement(customizable, ExpressionPlugin.EVALUATOR_CUSTOMIZATION_NAME);
 		if (evaluatorCustomization != null) {
 			evaluatorCustomization.markAsAcknowledged();
-			final Evaluator evaluator = unmarshaller.unmarshal(evaluatorCustomization.element, Evaluator.class).getValue();
-			if(evaluator.getName() == null) {
+			final Evaluator evaluator = binder.unmarshal(evaluatorCustomization.element, Evaluator.class).getValue();
+			if (evaluator.getName() == null) {
 				evaluator.setName(getEvaluatorName(evaluator));
 			}
 			fillEvaluatorReferences(evaluator);
-			evaluatorMap.put(getEvaluatorName(evaluator), evaluator);
+			evaluatorMap.put(getEvaluatorName(evaluator), new EvaluatorCustomization(evaluator, binder));
 		}
 		return evaluatorMap;
 	}
 
 	private void fillEvaluatorReferences(final Evaluator evaluator) {
-		for(final Expression expression:evaluator.getExpression()) {
-			if (expression.getEvaluatorRef() == null) {
-				final EvaluatorRef evaluatorRef = new EvaluatorRef();
-				evaluatorRef.setName(evaluator.getName());
-				expression.setEvaluatorRef(evaluatorRef);
-			} else {
-				if (expression.getEvaluatorRef().getName() == null) {
-					expression.getEvaluatorRef().setName(evaluator.getName());
-				}
-				if (expression.getEvaluatorRef().getMethod() == null && !evaluator.getMethod().isEmpty()) {
-					expression.getEvaluatorRef().setMethod(evaluator.getMethod().get(0).getName());
-				}
+		for (final Expression expression : evaluator.getExpression()) {
+			if (expression.getEvaluatorName() == null) {
+				expression.setEvaluatorName(evaluator.getName());
+			}
+			if (expression.getEvaluatorMethod() == null && !evaluator.getMethod().isEmpty()) {
+				expression.setEvaluatorMethod(evaluator.getMethod().get(0).getName());
 			}
 		}
 	}
 
-	private List<Expression> getExpressions(final CCustomizable customizable) throws JAXBException {
-		final List<Expression> expressionMap = new ArrayList<>();
-		final Unmarshaller unmarshaller = ExpressionPlugin.JAXB_CONTEXT.createUnmarshaller();
+	private List<ExpressionCustomization> getExpressions(final CCustomizable customizable) throws JAXBException {
+		final List<ExpressionCustomization> expressionMap = new ArrayList<>();
+		final Binder<Node> binder = ExpressionPlugin.JAXB_CONTEXT.createBinder();
 		final CPluginCustomization expressionsCustomization = getCustomizationElement(customizable, ExpressionPlugin.EXPRESSIONS_CUSTOMIZATION_NAME);
 		if (expressionsCustomization != null) {
 			expressionsCustomization.markAsAcknowledged();
-			final Expressions expressions = unmarshaller.unmarshal(expressionsCustomization.element, Expressions.class).getValue();
-			for(final Expression expression:expressions.getExpression()) {
-				if(expression.getEvaluatorRef() == null) {
-					expression.setEvaluatorRef(expressions.getEvaluatorRef());
-				} else if(expressions.getEvaluatorRef() != null) {
-					if(expression.getEvaluatorRef().getName() == null) {
-						expression.getEvaluatorRef().setName(expressions.getEvaluatorRef().getName());
-					}
-					if(expression.getEvaluatorRef().getMethod() == null) {
-						expression.getEvaluatorRef().setMethod( expressions.getEvaluatorRef().getMethod());
-					}
+			final Expressions expressions = binder.unmarshal(expressionsCustomization.element, Expressions.class).getValue();
+			for (final Expression expression : expressions.getExpression()) {
+				if (expression.getEvaluatorName() == null) {
+					expression.setEvaluatorName(expressions.getEvaluatorName());
 				}
-				expressionMap.add(expression);
+				if (expression.getEvaluatorMethod() == null) {
+					expression.setEvaluatorMethod(expressions.getEvaluatorMethod());
+				}
+				expressionMap.add(new ExpressionCustomization(expression, (Element)binder.getXMLNode(expression)));
 			}
 		}
 		final CPluginCustomization expressionCustomization = getCustomizationElement(customizable, ExpressionPlugin.EXPRESSION_CUSTOMIZATION_NAME);
 		if (expressionCustomization != null) {
 			expressionCustomization.markAsAcknowledged();
-			final Expression expression = unmarshaller.unmarshal(expressionCustomization.element, Expression.class).getValue();
-			expressionMap.add(expression);
+			final Expression expression = binder.unmarshal(expressionCustomization.element, Expression.class).getValue();
+			expressionMap.add(new ExpressionCustomization(expression, expressionCustomization.element));
 		}
 		return expressionMap;
 	}
 
 	private String getEvaluatorName(final Evaluator evaluator) {
-		if(evaluator.getName() != null) return evaluator.getName();
-		if(evaluator.getClazz() == null) return null;
+		if (evaluator.getName() != null) return evaluator.getName();
+		if (evaluator.getClazz() == null) return null;
 		final int simpleNameIndex = evaluator.getClazz().lastIndexOf('.') + 1;
 		return evaluator.getClazz().substring(simpleNameIndex);
 	}
 
-	private void generateMethod(final ErrorHandler errorHandler,
-			final ClassOutline classOutline,
-			final Map<String,Evaluator> globalEvaluators,
-			final List<Expression> expressions)
-			throws JAXBException,SAXException {
+	private void generateMethods(final ErrorHandler errorHandler,
+	                             final ClassOutline classOutline,
+	                             final Map<String, EvaluatorCustomization> globalEvaluators,
+	                             final List<ExpressionCustomization> expressions)
+			throws JAXBException, SAXException {
 		final Outline outline = classOutline.parent();
 		final JCodeModel model = outline.getCodeModel();
-		final Map<String,Evaluator> evaluators = new LinkedHashMap<>();
-		final Map<String, Evaluator> localEvaluators = getEvaluators(classOutline.target);
-		final List<Expression> localExpressions = new ArrayList<>(expressions);
-		for(final Evaluator evaluator:localEvaluators.values()) {
-			localExpressions.addAll(evaluator.getExpression());
+		final Map<String, EvaluatorCustomization> evaluators = new LinkedHashMap<>();
+		final Map<String, EvaluatorCustomization> localEvaluators = getEvaluators(classOutline.target);
+		final List<ExpressionCustomization> localExpressions = new ArrayList<>(expressions);
+		for (final EvaluatorCustomization evaluator : localEvaluators.values()) {
+			localExpressions.addAll(evaluator.expressionCustomizations);
 		}
-		evaluators.putAll(localEvaluators);
 		evaluators.putAll(globalEvaluators);
+		evaluators.putAll(localEvaluators);
 		if (evaluators.isEmpty()) {
-			errorHandler.error(new SAXParseException(ExpressionPlugin.RESOURCE_BUNDLE.getString("exception.missingFormatter"), classOutline.target.getLocator()));
+			evaluators.put(null,new EvaluatorCustomization(new Evaluator(), null));
+			errorHandler.warning(getException(classOutline, "exception.missingFormatter"));
 		}
-
-		final Map<String,JFieldVar> evaluatorFields = new LinkedHashMap<>();
+		final Map<String, JFieldVar> evaluatorFields = new LinkedHashMap<>();
 		final JDefinedClass implClass = classOutline.implClass;
-		for(final Expression expression:localExpressions) {
-			final Evaluator evaluator = expression.getEvaluatorRef() == null || expression.getEvaluatorRef().getName() == null
-					? evaluators.values().iterator().next() : evaluators.get(expression.getEvaluatorRef().getName());
-			if(evaluator == null) {
-				errorHandler.error(new SAXParseException(ExpressionPlugin.RESOURCE_BUNDLE.getString("exception.missingFormatter"), classOutline.target.getLocator()));
+		for (final ExpressionCustomization expressionCustomization : localExpressions) {
+			final Expression expression = expressionCustomization.expression;
+			final Evaluator evaluator = expression.getEvaluatorName() == null
+					? evaluators.values().iterator().next().evaluator : evaluators.get(expression.getEvaluatorName()).evaluator;
+			if (evaluator == null) {
+				errorHandler.error(getException(classOutline, "exception.missingFormatter"));
 				continue;
 			}
 			final JType methodReturnType = translateType(outline, expression);
-			final String methodName = coalesce(expression.getMethodName(), createMethodName(outline, expression), "toString");
-			final JMethod generatedMethod = implClass.method(JMod.PUBLIC, methodReturnType, methodName);
+			final String methodName = coalesce(expression.getMethodName(), createMethodName(outline, expression), ExpressionPlugin.DEFAULT_GENERATED_METHOD_NAME);
+			final int modifiers = parseModifiers(coalesce(expression.getMethodAccess(), ExpressionPlugin.DEFAULT_GENERATED_METHOD_MODIFIERS));
+			final JMethod generatedMethod = implClass.method(modifiers, methodReturnType, methodName);
 			final JInvocation simpleInvoke;
-			if(evaluator.getClazz() == null) {
-				generatedMethod.body()._return(JExpr.direct(expression.getSelect()));
+			final String expressionSelect;
+			try {
+				expressionSelect = coalesce(xmlToString(expression.getAny()), expression.getSelect());
+			} catch (final TransformerException e) {
+				errorHandler.error(getException(classOutline, "exception.invalidExpressionContent", methodName));
+				continue;
+			}
+			if (evaluator.getClazz() == null || evaluator.getStrategy() == EvaluatorStrategy.NONE) {
+				generatedMethod.body()._return(JExpr.direct(expressionSelect));
 			} else {
-				final Method method = expression.getEvaluatorRef() == null || expression.getEvaluatorRef().getMethod() == null
-						? evaluator.getMethod().get(0) : findMethod(evaluator, expression.getEvaluatorRef().getMethod());
+				final Method method = expression.getEvaluatorMethod() == null
+						? evaluator.getMethod().isEmpty() ? ExpressionPlugin.DEFAULT_METHOD_DEF : evaluator.getMethod().get(0)
+						: findMethod(evaluator, expression.getEvaluatorMethod());
 				if (method == null) {
-					errorHandler.error(new SAXParseException(ExpressionPlugin.RESOURCE_BUNDLE.getString("exception.missingMethod"), classOutline.target.getLocator()));
+					errorHandler.error(getException(classOutline, "exception.missingMethod", expression.getEvaluatorMethod(), evaluator.getClazz()));
 					continue;
 				}
-				if (evaluator.isStatic()) {
+				method.setNamespaceAware(coalesce(method.isNamespaceAware(), evaluator.isNamespaceAware(), false));
+				if (evaluator.getStrategy() == EvaluatorStrategy.STATIC) {
 					simpleInvoke = model.ref(evaluator.getClazz()).staticInvoke(method.getName()).arg(JExpr._this());
 				} else {
 					JFieldVar evaluatorField = evaluatorFields.get(evaluator.getName());
 					if (evaluatorField == null) {
 						final JClass fieldType = model.ref(evaluator.getClazz());
+						final String evaluatorFieldname = evaluator.getField() == null
+								? String.format(ExpressionPlugin.DEFAULT_EVALUATOR_FIELD_NAME, outline.getModel().getNameConverter().toClassName(evaluator.getName()))
+								: evaluator.getField();
+						final JExpression evaluatorFieldInitExpression;
+						if (evaluator.getStrategy() == EvaluatorStrategy.CLASS_INSTANCE) {
+							final Context context = evaluator.getContext();
+							if (context == null || context.getClazz() == null) {
+								errorHandler.error(getException(classOutline, "exception.missingContext", coalesce(evaluator.getName(), evaluator.getClazz(), "-n/a-")));
+								continue;
+							}
+							final JClass contextFieldType = model.ref(context.getClazz());
+							final JFieldVar contextField = implClass.field(
+									JMod.PRIVATE | JMod.STATIC | JMod.TRANSIENT,
+									contextFieldType,
+									context.getField() == null
+											? String.format(ExpressionPlugin.DEFAULT_CONTEXT_FIELD_NAME, contextFieldType.name())
+											: context.getField(),
+									JExpr._new(contextFieldType).arg(implClass.dotclass())
+							);
+							evaluatorFieldInitExpression = implClass.staticRef(contextField).invoke(context.getMethod()).arg(JExpr._this());
+						} else {
+							evaluatorFieldInitExpression = JExpr._new(fieldType).arg(JExpr._this());
+						}
 						evaluatorField = implClass.field(
 								JMod.PRIVATE | JMod.TRANSIENT,
 								fieldType,
-								evaluator.getField() == null
-										? String.format(ExpressionPlugin.DEFAULT_EVALUATOR_FIELD_NAME, outline.getModel().getNameConverter().toClassName(evaluator.getName()))
-										: evaluator.getField()
+								evaluatorFieldname,
+								evaluatorFieldInitExpression
 						);
 						evaluatorFields.put(evaluator.getName(), evaluatorField);
 					}
-					final JConditional ifStatement = generatedMethod.body()._if(evaluatorField.eq(JExpr._null()));
-					ifStatement._then().assign(evaluatorField, JExpr._new(evaluatorField.type()).arg(JExpr._this()));
 					simpleInvoke = evaluatorField.invoke(method.getName());
 				}
-				generatedMethod.body()._return(generateInvocation(expression, method, methodReturnType, simpleInvoke));
+				final JExpression expressionLiteral = !method.isLiteral()
+						? JExpr.lit(expressionSelect)
+						: JExpr.direct(expressionSelect);
+				simpleInvoke.arg(expressionLiteral);
+				if (method.getTypePassing() == Language.JAVA) {
+					if (methodReturnType instanceof JClass) {
+						simpleInvoke.arg(JExpr.dotclass((JClass)methodReturnType));
+					} else {
+						simpleInvoke.arg(methodReturnType.boxify().dotclass());
+					}
+				} else if (method.getTypePassing() == Language.XML_SCHEMA) {
+					final JClass qNameType = methodReturnType.owner().ref(QName.class);
+					simpleInvoke.arg(JExpr._new(qNameType).arg(expression.getType().getNamespaceURI()).arg(expression.getType().getLocalPart()).arg(expression.getType().getPrefix()));
+				}
+				if (method.isNamespaceAware()) {
+					final JFieldVar nsMapConstant = implClass.field(
+							JMod.PRIVATE | JMod.STATIC | JMod.FINAL | JMod.TRANSIENT,
+							model.ref(String.class).array().array(),
+							String.format(ExpressionPlugin.DEFAULT_NAMESPACE_MAP_FIELD_NAME, methodName),
+							findNamespaceMappings(model, expressionSelect, expressionCustomization.element)
+					);
+					simpleInvoke.arg(implClass.staticRef(nsMapConstant));
+				}
+				final JExpression invocation = JExpr.cast(methodReturnType, simpleInvoke);
+				generatedMethod.body()._return(invocation);
 			}
 		}
+	}
+
+	static JExpression findNamespaceMappings(final JCodeModel model,final String expressionString, final Element expressionElement) {
+		final JArray arrayInit = JExpr.newArray(model.ref(String.class).array());
+		final Matcher matcher = ExpressionPlugin.NS_PREFIX_PATTERN.matcher(expressionString);
+		final Set<String> alreadyMatchedPrefixes = new HashSet<>();
+		while (matcher.find()) {
+			final String namespacePrefix = matcher.group(1);
+			if(alreadyMatchedPrefixes.add(namespacePrefix)) {
+				final String namespaceUri = expressionElement.lookupNamespaceURI(namespacePrefix);
+				if (namespaceUri != null) {
+					final JArray tupleInit = JExpr.newArray(model.ref(String.class));
+					tupleInit.add(JExpr.lit(namespacePrefix));
+					tupleInit.add(JExpr.lit(namespaceUri));
+					arrayInit.add(tupleInit);
+				}
+			}
+		}
+		return arrayInit;
 	}
 
 	private String createMethodName(final Outline outline, final Expression expression) {
 		return expression == null || expression.getName() == null ? null : "get" + outline.getModel().getNameConverter().toPropertyName(expression.getName());
 	}
 
-	private JExpression generateInvocation(final Expression expression, final Method method, final JType methodReturnType, final JInvocation invocation) {
-		final JExpression expressionLiteral = !method.isLiteral()
-				? JExpr.lit(expression.getSelect())
-				: JExpr.direct(expression.getSelect());
-		invocation.arg(expressionLiteral);
-		if (method.getTypePassing() == Language.JAVA) {
-			if (methodReturnType instanceof JClass) {
-				return invocation.arg(JExpr.dotclass((JClass)methodReturnType));
-			} else {
-				return JExpr.cast(methodReturnType, invocation.arg(methodReturnType.boxify().dotclass()));
-			}
-		} else if (method.getTypePassing() == Language.XML_SCHEMA) {
-			final JClass qNameType = methodReturnType.owner().ref(QName.class);
-			return JExpr.cast(methodReturnType, invocation.arg(JExpr._new(qNameType).arg(expression.getType().getNamespaceURI()).arg(expression.getType().getLocalPart()).arg(expression.getType().getPrefix())));
-		} else {
-			return JExpr.cast(methodReturnType, invocation);
-		}
-	}
-
 	private JType translateType(final Outline model, final Expression expression) {
-		if(expression.getType() == null) return model.getCodeModel().ref(String.class);
-		for(final CBuiltinLeafInfo cinfo:model.getModel().builtins().values()) {
-			if(typeMatches(expression, cinfo)) {
+		if (expression.getType() == null) return model.getCodeModel().ref(String.class);
+		for (final CBuiltinLeafInfo cinfo : model.getModel().builtins().values()) {
+			if (typeMatches(expression, cinfo)) {
 				return cinfo.toType(model, Aspect.EXPOSED);
 			}
-			for(final QName typeName : cinfo.getTypeNames()) {
-				if(typeMatches(expression, typeName)) {
+			for (final QName typeName : cinfo.getTypeNames()) {
+				if (typeMatches(expression, typeName)) {
 					return cinfo.toType(model, Aspect.EXPOSED);
 				}
 			}
 		}
-		for(final CClassInfo cinfo:model.getModel().beans().values()) {
-			if(typeMatches(expression, cinfo)) {
+		for (final CClassInfo cinfo : model.getModel().beans().values()) {
+			if (typeMatches(expression, cinfo)) {
 				return cinfo.toType(model, Aspect.EXPOSED);
 			}
 		}
-		for(final CEnumLeafInfo cinfo:model.getModel().enums().values()) {
-			if(typeMatches(expression, cinfo)) {
+		for (final CEnumLeafInfo cinfo : model.getModel().enums().values()) {
+			if (typeMatches(expression, cinfo)) {
 				return cinfo.toType(model, Aspect.EXPOSED);
 			}
 		}
@@ -334,7 +408,7 @@ public class ExpressionPlugin extends AbstractPlugin {
 	}
 
 	private boolean typeMatches(final Expression expression, final MaybeElement<?, ?> cinfo) {
-		final QName relevantName= cinfo.isElement() ? cinfo.getElementName() : cinfo.getTypeName();
+		final QName relevantName = cinfo.isElement() ? cinfo.getElementName() : cinfo.getTypeName();
 		return typeMatches(expression, relevantName);
 	}
 
@@ -345,8 +419,8 @@ public class ExpressionPlugin extends AbstractPlugin {
 	}
 
 	private Method findMethod(final Evaluator evaluator, final String name) {
-		for(final Method method : evaluator.getMethod()) {
-			if(method.getName().equals(name)) {
+		for (final Method method : evaluator.getMethod()) {
+			if (method.getName().equals(name)) {
 				return method;
 			}
 		}
@@ -396,7 +470,6 @@ public class ExpressionPlugin extends AbstractPlugin {
 		return elem.getCustomizations().find(ExpressionPlugin.CUSTOMIZATION_NS, elementName);
 	}
 
-
 	private <T> T coalesce(final T... vals) {
 		for (final T val : vals) {
 			if (val != null)
@@ -405,4 +478,53 @@ public class ExpressionPlugin extends AbstractPlugin {
 		return null;
 	}
 
+	private String xmlToString(final Element element) throws TransformerException {
+		if (element == null) return null;
+		if (element.hasAttributes() || hasElements(element)) {
+			// Return XML serialized to string.
+			final Transformer transformer = ExpressionPlugin.TRANSFORMER_FACTORY.newTransformer();
+			final StringWriter sw = new StringWriter();
+			final StreamResult streamResult = new StreamResult(sw);
+			transformer.transform(new DOMSource(element), streamResult);
+			return sw.toString();
+		} else {
+			// Strip off surrounding element if content is text-only.
+			return element.getTextContent();
+		}
+	}
+
+	private boolean hasElements(final Node node) {
+		for (int i = 0; i < node.getChildNodes().getLength(); i++) {
+			final Node child = node.getChildNodes().item(i);
+			if (child.getNodeType() == Node.ELEMENT_NODE) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private static class EvaluatorCustomization {
+		final Evaluator evaluator;
+		final Binder<Node> binder;
+		final List<ExpressionCustomization> expressionCustomizations;
+
+		public EvaluatorCustomization(final Evaluator evaluator, final Binder<Node> binder) {
+			this.evaluator = evaluator;
+			this.binder = binder;
+			this.expressionCustomizations = new ArrayList<>(evaluator.getExpression().size());
+			for (final Expression expression : evaluator.getExpression()) {
+				this.expressionCustomizations.add(new ExpressionCustomization(expression, (Element)this.binder.getXMLNode(expression)));
+			}
+		}
+	}
+
+	private static class ExpressionCustomization {
+		final Expression expression;
+		final Element element;
+
+		public ExpressionCustomization(final Expression expression, final Element element) {
+			this.expression = expression;
+			this.element = element;
+		}
+	}
 }

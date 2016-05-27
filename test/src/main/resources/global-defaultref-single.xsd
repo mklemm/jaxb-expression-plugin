@@ -18,9 +18,13 @@
 				<ep:evaluator class="net.codesup.jxpath.formatter.Evaluator">
 					<ep:method name="evaluate"/>
 				</ep:evaluator>
-				<ep:evaluator class="net.codesup.jaxb.plugins.expression.LiteralEvaluator" static="true">
+				<ep:evaluator class="net.codesup.jaxb.plugins.expression.LiteralEvaluator" strategy="static">
 					<ep:method name="check" type-passing="java" literal="true"/>
 					<ep:method name="loop" type-passing="xml-schema" literal="false"/>
+				</ep:evaluator>
+				<ep:evaluator name="optimizedEvaluator" class="net.codesup.jaxb.xpath.InstanceExpressionContext" strategy="class-instance">
+					<ep:context class="net.codesup.jaxb.xpath.ClassExpressionContext" method="createEvaluator"/>
+					<ep:method name="evaluate" namespace-aware="true"/>
 				</ep:evaluator>
 			</ep:evaluators>
 		</appinfo>
@@ -31,18 +35,17 @@
 			<annotation>
 				<appinfo>
 					<ep:expressions>
-						<!-- ep:expression name="logon-state"
+						<ep:expression name="logon-state"
 									   select="autoLogon ? &quot;Logon Enabled&quot; : &quot;Logon Off&quot;"
-									   type="string"/ -->
-						<ep:expression select="concat(user-id, ' - ', user-last-name, ', ', user-first-name)">
-							<ep:evaluator-ref name="Evaluator"/>
+									   type="string"/>
+						<ep:expression select="concat(user-id, ' - ', user-last-name, ', ', user-first-name)" evaluator-name="Evaluator"/>
+						<ep:expression evaluator-name="optimizedEvaluator" name="unique-id" xmlns:xsl="http://www.w3.org/1999/XSL/Transform">
+							<xsl:template>
+								<xsl:text>concat(user-id, ' - ', user-last-name)</xsl:text>
+							</xsl:template>
 						</ep:expression>
-						<!-- ep:expression name="int-value" select="confirmPrivilege + 1200" type="int">
-							<ep:evaluator-ref name="LiteralEvaluator" method="check"/>
-						</ep:expression>
-						<ep:expression name="loop-value" select="ebm 2008" type="tns:global-defaultref-single">
-							<ep:evaluator-ref name="LiteralEvaluator" method="loop"/>
-						</ep:expression -->
+						<ep:expression evaluator-name="LiteralEvaluator" evaluator-method="check" name="int-value" select="confirmPrivilege + 1200" type="int"/>
+						<ep:expression evaluator-name="LiteralEvaluator" evaluator-method="loop" name="loop-value" select="clone()" type="tns:global-defaultref-single"/>
 					</ep:expressions>
 				</appinfo>
 			</annotation>

@@ -17,5 +17,6 @@ public class ExpressionPluginTest {
 		r.setUserFirstName("Mirko");
 		r.setUserLastName("Klemm");
 		Assert.assertEquals("klemm0 - Klemm, Mirko", r.toString());
+		Assert.assertEquals("klemm0 - Klemm", r.getUniqueId());
 	}
 }

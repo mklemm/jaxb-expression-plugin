@@ -1,0 +1,9 @@
+<jxb:bindings version="2.1" xmlns:jxb="http://java.sun.com/xml/ns/jaxb" xmlns:xs="http://www.w3.org/2001/XMLSchema">
+	<jxb:bindings schemaLocation="expression.xsd">
+	   <jxb:bindings node="/xs:schema/xs:element[@name='expression']/xs:complexType/xs:sequence/xs:any">
+		   <jxb:property>
+			   <jxb:baseType name="org.w3c.dom.Element"/>
+		   </jxb:property>
+	   </jxb:bindings>
+	</jxb:bindings>
+</jxb:bindings>

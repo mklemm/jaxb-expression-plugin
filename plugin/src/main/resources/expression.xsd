@@ -25,6 +25,60 @@
 	  ~ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 	  ~ THE SOFTWARE.
 	  -->
+	<simpleType name="evaluator-strategy">
+		<annotation>
+			<documentation>
+				Possible values to control the strategy how
+				expression evaluators are initialized.
+			</documentation>
+		</annotation>
+		<restriction base="token">
+			<enumeration value="none">
+				<annotation>
+					<documentation>
+						Do not create an evaluator instance, instead, copy
+						all expressions literally to the generated methods of
+						the target class.
+					</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="instance">
+				<annotation>
+					<documentation>
+						Initialize an evaluator instance for each instance
+						of the generated JAXB target class. The instance will
+						be assigned to a generated instance field in the target
+						class.
+					</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="class-instance">
+				<annotation>
+					<documentation>
+						Initialize a class-scope (static) expression context instance per
+						target class. The context instance will be assigned to a generated
+						static field in the target class, and the context must have a factory
+						method to spawn an object of one evaluator per target class instance.
+						This means, initialization code will be executed at the time of
+						class initialization as well as at the time of instance initialization,
+						which will allow for the greatest possible flexibility in managing
+						resources needed to evaluate an expression.
+					</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="static">
+				<annotation>
+					<documentation>
+						Generate the expression evaluation code in a way that assumes that the evaluator class is a
+						utility class.
+						I.e. There will be no instance field, all evaluation methods will take the instance of the
+						generated entity class as the first parameter, and they will be called statically on the
+						evaluator class.
+					</documentation>
+				</annotation>
+			</enumeration>
+		</restriction>
+	</simpleType>
 	<simpleType name="language">
 		<restriction base="token">
 			<enumeration value="none"/>
@@ -32,12 +86,10 @@
 			<enumeration value="java"/>
 		</restriction>
 	</simpleType>
-	<element name="evaluator-ref">
-		<complexType>
-			<attribute name="name" type="NCName" use="required"/>
-			<attribute name="method" type="NCName" use="optional"/>
-		</complexType>
-	</element>
+	<attributeGroup name="evaluator-ref">
+		<attribute name="evaluator-name" type="string" use="optional"/>
+		<attribute name="evaluator-method" type="token" use="optional"/>
+	</attributeGroup>
 	<element name="expression">
 		<annotation>
 			<documentation>
@@ -48,17 +100,17 @@
 		</annotation>
 		<complexType>
 			<sequence>
-				<element ref="tns:evaluator-ref" minOccurs="0">
+				<any minOccurs="0" namespace="##any">
 					<annotation>
 						<documentation>
-							Select a specific evaluator configuration for the expressions under
-							this scope.
-							Default: The first evaluator defined.
+							Arbitrary expression representation that might be more complex or lengthy than the @select
+							attribute would permit. If both @select and this element are set, the content of this element
+							is used.
 						</documentation>
 					</annotation>
-				</element>
+				</any>
 			</sequence>
-			<attribute name="select" type="string" use="required">
+			<attribute name="select" type="string" use="optional">
 				<annotation>
 					<documentation>
 						Expression string passed to the formatter class. It is up to the formatter
@@ -66,6 +118,7 @@
 						In any case, invocation of the formatting method must return a representation
 						of the current instance of the generated class dependent on this expression.
 						See below for examples on how to do this with XPath.
+						The expression can also be passed as the text content of the expression element.
 					</documentation>
 				</annotation>
 			</attribute>
@@ -78,6 +131,13 @@
 						Not that the exact rules for the contents of this attribute
 						are language-specific, whereas "name" allows you to specify a
 						name in a language-neutral way.
+					</documentation>
+				</annotation>
+			</attribute>
+			<attribute name="method-access" type="string" use="optional">
+				<annotation>
+					<documentation>
+						Access modifiers for the generated method. Default: public
 					</documentation>
 				</annotation>
 			</attribute>
@@ -103,22 +163,31 @@
 					</documentation>
 				</annotation>
 			</attribute>
+			<attributeGroup ref="tns:evaluator-ref">
+				<annotation>
+					<documentation>
+						Select a specific evaluator configuration for the expressions under
+						this scope.
+						Default: The first evaluator defined.
+					</documentation>
+				</annotation>
+			</attributeGroup>
 		</complexType>
 	</element>
 	<element name="method">
 		<annotation>
 			<documentation>
-				Secification of the evaluation method of the evaluator class that
+				Specification of the evaluation method of the evaluator class that
 				will be called when an actual expression result
 				is requested via the generated method.
 				This method must have the following properties:
 				1. It must have a return type that can be cast
 				to the return type of any expression that is defined
 				in the scope of this evaluator.
-				2. If static=true, it mus take the instance of
+				2. If static=static, it mus take the instance of
 				the entity on which it evaluates as the first
 				argument and the expression itself as the second argument.
-				If static=false (the default), it must take the
+				If strategy=instance (the default), it must take the
 				expression itself as its only argument.
 			</documentation>
 		</annotation>
@@ -161,22 +230,38 @@
 					</documentation>
 				</annotation>
 			</attribute>
+			<attribute name="namespace-aware" type="boolean" default="false">
+				<annotation>
+					<documentation>
+						If true, it will be assumed that the the evaluator method
+						has an additional parameter for the namespace mappings.
+
+						The namespace mappings are an array of tuples that map namespace prefixes
+						to namespace URIs. Namespace prefixes must be unique, but there can be
+						multiple prefixes mapped to the same namespace URI.
+						On instantiation, the namespace mappings will be populated
+						with the namespaces from the XSD document that the code is generated from.
+
+						This setting overrides the same attribute on the &lt;evaluator&gt; level.
+					</documentation>
+				</annotation>
+			</attribute>
 		</complexType>
 	</element>
 	<element name="expressions">
 		<complexType>
 			<sequence>
-				<element ref="tns:evaluator-ref" minOccurs="0">
-					<annotation>
-						<documentation>
-							Select a specific evaluator configuration for the expressions under
-							this scope.
-							Default: The first evaluator defined.
-						</documentation>
-					</annotation>
-				</element>
 				<element ref="tns:expression" minOccurs="0" maxOccurs="unbounded"/>
 			</sequence>
+			<attributeGroup ref="tns:evaluator-ref">
+				<annotation>
+					<documentation>
+						Select a specific evaluator configuration for the expressions under
+						this scope.
+						Default: The first evaluator defined.
+					</documentation>
+				</annotation>
+			</attributeGroup>
 		</complexType>
 	</element>
 	<element name="evaluator">
@@ -185,9 +270,9 @@
 				This binding customization specifies the evaluator class which
 				will be called in the generated code to evaluate the given expression.
 				If static=false (the default), the class must have a one-argument
-				constructor that receives the expression. It will be instantiated once
-				per entity instance when an expression on that instance is evaluated
-				for the first time.
+				constructor that receives a target instance reference. It will be
+				instantiated once per entity instance when an expression on that
+				instance is evaluated for the first time.
 				If static=true, the class will never be instantiated, it is
 				suggested that it is marked "final" and has a private no-arg constructor
 				in this case.
@@ -195,6 +280,17 @@
 		</annotation>
 		<complexType>
 			<sequence>
+				<element ref="tns:context" minOccurs="0">
+					<annotation>
+						<documentation>
+							Only relevant if strategy=class-instance.
+							Defines a class that represents the static
+							expression evaluation context, acting as a factory for per-instance
+							evaluator objects.
+							See the description of the &quot;context&quot; element for details.
+						</documentation>
+					</annotation>
+				</element>
 				<element ref="tns:method" minOccurs="0" maxOccurs="unbounded">
 					<annotation>
 						<documentation>
@@ -227,8 +323,10 @@
 					<documentation>
 						The fully qualified name of the java class to evaluate all expressions
 						defined in this scope.
-						If omitted, methods generated referencing this evaluator will contain
-						no call to an evaluator method, but return their expression literally.
+						If omitted, or strategy-none, methods generated referencing this
+						evaluator will contain no call to an evaluator method, but return
+						their expression literally. If strategy is other than none, this
+						parameter is mandatory.
 					</documentation>
 				</annotation>
 			</attribute>
@@ -242,14 +340,70 @@
 					</documentation>
 				</annotation>
 			</attribute>
-			<attribute name="static" type="boolean" use="optional" default="false">
+			<attribute name="strategy" type="tns:evaluator-strategy" use="optional" default="instance">
 				<annotation>
 					<documentation>
-						Generate the expression evaluation code in a way that assumes that the evaluator class is a
-						utility class.
-						I.e. There will be no instance field, all evaluation methods will take the instance of the
-						generated entity class as the first parameter, and they will be called statically on the
-						evaluator class.
+						The strategy how initialization and calling of the evaluator methods should work.
+					</documentation>
+				</annotation>
+			</attribute>
+			<attribute name="namespace-aware" type="boolean" default="false">
+				<annotation>
+					<documentation>
+						If true, it will be assumed that the calls to the evaluator methods
+						have an additional parameter for the namespace mappings.
+
+						The namespace mappings are an array of tuples that map namespace prefixes
+						to namespace URIs. Namespace prefixes must be unique, but there can be
+						multiple prefixes mapped to the same namespace URI.
+						On instantiation, the namespace mappings will be populated
+						with the namespaces from the XSD document that the code is generated from.
+					</documentation>
+				</annotation>
+			</attribute>
+		</complexType>
+	</element>
+	<element name="context">
+		<annotation>
+			<documentation>
+				Only relevant if strategy=class-instance.
+				Defines a class that represents the static
+				expression evaluation context, acting as a factory for per-instance
+				evaluator objects.
+			</documentation>
+		</annotation>
+		<complexType>
+			<attribute name="class" type="string" use="required">
+				<annotation>
+					<documentation>
+						The fully qualified name of the java class that represents the static
+						expression evaluation context, acting as a factory for per-instance
+						evaluator objects. If strategy=class-instance, this parameter is mandatory.
+
+						The context class must have a constructor with the following
+						possible signature:
+
+						(Class&lt;?&gt; targetClass)
+					</documentation>
+				</annotation>
+			</attribute>
+			<attribute name="method" type="token" use="optional">
+				<annotation>
+					<documentation>
+						The name of the method in the context-class that creates a per-instance
+						evaluator object, which will then be assigned to an instance field
+						of the target class.
+						The method must have one argument that takes the instance of the target
+						class.
+					</documentation>
+				</annotation>
+			</attribute>
+			<attribute name="field" type="string" use="optional">
+				<annotation>
+					<documentation>
+						Name of the static field in the generated class to hold the instance
+						of the context class.
+						Default: __CONTEXT_&lt;class&gt;
 					</documentation>
 				</annotation>
 			</attribute>
