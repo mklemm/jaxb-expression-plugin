@@ -19,8 +19,9 @@ the generic toString(), hashCode(), and equals() logic.
 The expression plugin lets you implement simple additional methods for a generated class while
 keeping most of your XSDs and binding files language-independent. It only allows to generate
 read-only logic, which is good enough in a functional environment.
-For example, when combined with the [jaxb-object-formatter](http://github.com/mklemm/jaxb-object-formatter) module,
-which uses a fork of the apache [commons-jxpath](http://github.com/mklemm/commons-jxpath) project,
+For example, when combined with the [jaxb-object-formatter](http://github.com/mklemm/jaxb-object-formatter) module
+(which uses a fork of the apache [commons-jxpath](http://github.com/mklemm/commons-jxpath) project),
+or, even better, the [jaxb-xpath-evaluator](http://github.com/mklemm/jaxb-xpath-evaluator),
 you can express certain read-only logic in terms of XPath-expressions that are evaluated on the live
 object graph, thus staying within the scope of W3C XML standards, so you can easily
 share your annotated XSDs, and third-party client code may even use the annotations
