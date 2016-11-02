@@ -309,28 +309,32 @@ public class ExpressionPlugin extends AbstractPlugin {
 	}
 
 	private JType translateType(final Outline model, final Expression expression) {
-		if(expression.getType() == null) return model.getCodeModel().ref(String.class);
-		for(final CBuiltinLeafInfo cinfo:model.getModel().builtins().values()) {
-			if(typeMatches(expression, cinfo)) {
-				return cinfo.toType(model, Aspect.EXPOSED);
+	if (expression.getType() == null) return model.getCodeModel().ref(String.class);
+		for (final CBuiltinLeafInfo cinfo : model.getModel().builtins().values()) {
+			if (typeMatches(expression, cinfo)) {
+				return getPrimitiveFor(expression, cinfo.toType(model, Aspect.EXPOSED));
 			}
-			for(final QName typeName : cinfo.getTypeNames()) {
-				if(typeMatches(expression, typeName)) {
-					return cinfo.toType(model, Aspect.EXPOSED);
+			for (final QName typeName : cinfo.getTypeNames()) {
+				if (typeMatches(expression, typeName)) {
+					return getPrimitiveFor(expression, cinfo.toType(model, Aspect.EXPOSED));
 				}
 			}
 		}
-		for(final CClassInfo cinfo:model.getModel().beans().values()) {
-			if(typeMatches(expression, cinfo)) {
-				return cinfo.toType(model, Aspect.EXPOSED);
+		for (final CClassInfo cinfo : model.getModel().beans().values()) {
+			if (typeMatches(expression, cinfo)) {
+				return getPrimitiveFor(expression, cinfo.toType(model, Aspect.EXPOSED));
 			}
 		}
-		for(final CEnumLeafInfo cinfo:model.getModel().enums().values()) {
-			if(typeMatches(expression, cinfo)) {
-				return cinfo.toType(model, Aspect.EXPOSED);
+		for (final CEnumLeafInfo cinfo : model.getModel().enums().values()) {
+			if (typeMatches(expression, cinfo)) {
+				return getPrimitiveFor(expression, cinfo.toType(model, Aspect.EXPOSED));
 			}
 		}
-		return model.getCodeModel().ref(String.class);
+		return model.getCodeModel().ref(expression.getType().getLocalPart());
+	}
+
+	private JType getPrimitiveFor(final Expression expression, final JType type) {
+		return expression.isNillable() == null || !expression.isNillable() ? type.unboxify() : type;
 	}
 
 	private boolean typeMatches(final Expression expression, final MaybeElement<?, ?> cinfo) {

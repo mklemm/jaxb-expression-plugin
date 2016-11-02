@@ -103,6 +103,13 @@
 					</documentation>
 				</annotation>
 			</attribute>
+			<attribute name="nillable" type="boolean" use="optional">
+				<annotation>
+					<documentation>
+						Indicates whether the result type of the expression can be xsi:nil.
+					</documentation>
+				</annotation>
+			</attribute>
 		</complexType>
 	</element>
 	<element name="method">
